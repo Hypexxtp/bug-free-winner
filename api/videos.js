@@ -1,15 +1,7 @@
 export default async function handler(req, res) {
   try {
     const response = await fetch(
-      "https://api.pixdomilhao.com.br/v1/site/blocks?type=BANNER,COUNTDOWN,MARQUEE,POPUP,STORY,STORY_GROUP",
-      {
-        method: "GET",
-        headers: {
-          "accept": "application/json",
-          "user-agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-        },
-      }
+      "https://api.pixdomilhao.com.br/v1/site/blocks?type=BANNER,COUNTDOWN,MARQUEE,POPUP,STORY,STORY_GROUP"
     );
 
     const data = await response.json();
@@ -21,47 +13,71 @@ export default async function handler(req, res) {
       });
     }
 
-    const videos = data
-      .filter(item =>
-        item.type === "STORY" &&
-        item.title &&
-        item.title.startsWith("Raspou. Achou. É pix!")
-      )
-      .map(item => {
+    const stories = data.filter(item =>
+      item.type === "STORY" &&
+      item.title &&
+      item.title.startsWith("Raspou. Achou. É pix!") &&
+      item?.data?.video?.url
+    );
 
-        const videoUrl = item?.data?.video?.url || null;
-        let embedUrl = null;
-        let thumbnail = null;
+    const videos = await Promise.all(
+      stories.map(async (item) => {
+        const originalUrl = item.data.video.url;
 
-        if (videoUrl && videoUrl.includes("youtube.com")) {
+        // Extrair ID
+        const match = originalUrl.match(/(?:shorts\/|v=)([^?&]+)/);
+        if (!match || !match[1]) return null;
 
-          const match = videoUrl.match(/(?:shorts\/|v=)([^?&]+)/);
+        const videoId = match[1];
 
-          if (match && match[1]) {
-            const videoId = match[1];
+        const youtubeUrl = `https://youtu.be/${videoId}`;
 
-            // 🔥 Embed usando youtube-nocookie
-            embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1`;
+        // 🔥 Chama oEmbed oficial do YouTube
+        const oembedResponse = await fetch(
+          `https://www.youtube.com/oembed?url=${encodeURIComponent(
+            youtubeUrl
+          )}&format=json`
+        );
 
-            thumbnail = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
-          }
+        if (!oembedResponse.ok) {
+          return {
+            id: item.id,
+            error: "Vídeo não permite oEmbed"
+          };
         }
+
+        const oembedData = await oembedResponse.json();
+
+        // 🔥 Iframe gerado automaticamente
+        const iframe = `
+<iframe
+  width="315"
+  height="560"
+  src="https://www.youtube-nocookie.com/embed/${videoId}?playsinline=1&rel=0&modestbranding=1"
+  title="${oembedData.title}"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+  referrerpolicy="strict-origin-when-cross-origin"
+  allowfullscreen>
+</iframe>`;
 
         return {
           id: item.id,
-          title: item.title,
-          shortTitle: item?.data?.title || null,
-          badge: item?.data?.badge?.text || null,
-          publishAt: item.publishAt,
-          embedUrl,
-          thumbnail
+          storyTitle: item.title,
+          youtubeUrl,
+          videoId,
+          title: oembedData.title,
+          author: oembedData.author_name,
+          thumbnail: oembedData.thumbnail_url,
+          iframe
         };
-      });
+      })
+    );
 
     return res.status(200).json({
       success: true,
-      total: videos.length,
-      videos
+      total: videos.filter(Boolean).length,
+      videos: videos.filter(Boolean)
     });
 
   } catch (error) {

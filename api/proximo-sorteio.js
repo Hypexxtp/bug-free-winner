@@ -6,25 +6,29 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    let foundDate = null;
+    const targetId = "101061537879478272";
 
-    for (const item of data) {
-      if (item?.dataBlock?.textBefore === "PRÓXIMO SORTEIO EM:") {
-        foundDate = item.dataBlock.date;
-        break;
-      }
-    }
+    const bloco = data.find(item => String(item.id) === targetId);
 
-    if (!foundDate) {
+    if (!bloco) {
       return res.status(404).json({
         success: false,
-        message: "Data não encontrada"
+        message: "ID não encontrado"
+      });
+    }
+
+    const date = bloco?.dataBlock?.date;
+
+    if (!date) {
+      return res.status(404).json({
+        success: false,
+        message: "Data não encontrada no bloco"
       });
     }
 
     return res.status(200).json({
       success: true,
-      date: foundDate
+      date
     });
 
   } catch (error) {
